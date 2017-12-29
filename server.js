@@ -5,7 +5,6 @@
 var express = require('express');
 var app     = express();
 var fs      = require('fs');
-var _       = require('lodash');
 var Twitter = require('twitter'),
     winston = require('winston'),
     config = {
@@ -15,8 +14,6 @@ var Twitter = require('twitter'),
         access_token_key: process.env.ACCESS_TOKEN,
         access_token_secret: process.env.ACCESS_TOKEN_SECRET
     },
-    AWS = require('aws-sdk'),
-    s3 = new AWS.S3(),
     Rollbar = require("rollbar"),
     Repeat = require('repeat'),
     leftPad = require ('left-pad'),
@@ -24,6 +21,30 @@ var Twitter = require('twitter'),
     tweet   = new Twitter(config),
     video_path = '/tmp/nytimes.mp4',
     bucket = process.env.AWS_BUCKET_NAME,
+    s3 = require('s3'),
+    s3Client = s3.createClient({
+      maxAsyncS3: 20,     // this is the default 
+      s3RetryCount: 3,    // this is the default 
+      s3RetryDelay: 1000, // this is the default 
+      multipartUploadThreshold: 20971520, // this is the default (20 MB) 
+      multipartUploadSize: 15728640, // this is the default (15 MB) 
+      s3Options: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        // any other options are passed to new AWS.S3() 
+        // See: http://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/Config.html#constructor-property 
+      },
+    }),
+    s3Params = {
+      localFile: "some/local/file",
+
+      s3Params: {
+        Bucket: bucket,
+        Key: "some/remote/file",
+        // other options supported by putObject, except Body and ContentLength. 
+        // See: http://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#putObject-property 
+      },
+    },
     luxon = require('luxon'),
     DateTime = luxon.DateTime,
     dt = DateTime.local().setZone('America/New_York'),
@@ -123,30 +144,31 @@ function makeVideo() {
 
     winston.log('info', `mp4 rendering complete. ffmpeg output ${stdout}`);
 
-      
-    fs.readFile(`/tmp/nytimes.mp4`, function (err, data) {
-      if (err) { rollbar.log(err); throw err; }
+    winston.log('info', `Finished converting file. Uploading to S3.`);
 
-      winston.log('info', `Finished converting file. Uploading to S3.`);
+    var uploader = s3Client.uploadFile({
+      localFile: "/tmp/nytimes.mp4",
 
-      s3.putObject({
+      s3Params: {
         Bucket: bucket,
         Key: `${current_date}/nytimes.mp4`,
         ACL: 'public-read',
-        ContentType: 'video/mp4',
-        Body: data
-      }, function(err, data) {
-        if (err) {
-          rollbar.log(err)
-        } else {
-          winston.log('info', `Successfully uploaded to bucket nytimes.lapse`);
-          return true;
-        }
-      });
-
+        ContentType: 'video/mp4'
+      }
     });
-      
-      
+
+    uploader.on('error', function(err) {
+      rollbar.log(err)
+    });
+
+    uploader.on('end', function() {
+      console.log("done uploading");
+      winston.log('info', `Successfully uploaded to bucket ${bucket}`);
+
+      return true;
+    });
+
+
     initUpload() // Declare that you wish to upload some media
       .then(appendUpload) // Send the data for the media
       .then(finalizeUpload) // Declare that you are done uploading chunks
@@ -216,7 +238,7 @@ app.get("/snapshot", function(request, response) {
       return;
     } else {
 
-      exec(`composite -pointsize 18 label:"${dt.toLocaleString(DateTime.DATETIME_SHORT_WITH_SECONDS)}" -geometry +25+10 -gravity northeast /app/public/frame.png /app/public/frame_stamped.png`, {cwd: "/tmp"}, (err, stdout, stderr) => {
+      exec(`composite -pointsize 18 label:"${dt.toLocaleString(DateTime.DATETIME_SHORT_WITH_SECONDS)}" -geometry +25+10 -gravity northeast /tmp/frame.png /tmp/frame_stamped.png`, {cwd: "/tmp"}, (err, stdout, stderr) => {
         
         if (err) {
           rollbar.log(err);
@@ -224,27 +246,26 @@ app.get("/snapshot", function(request, response) {
         } else {
         
           winston.log('info', `Finished timestamping file.`);
-          
-          fs.readFile(`/tmp/frame_stamped.png`, function (err, data) {
-            if (err) { rollbar.log(err); throw err; }
 
-            winston.log('info', `Finished converting file. Uploading to S3. ${current_date}/image_${leftPad(intervalsSinceMidnight(), 3, 0)}.png`);
+          var uploader = s3Client.uploadFile({
+            localFile: "/tmp/frame_stamped.png",
 
-            s3.putObject({
+            s3Params: {
               Bucket: bucket,
               Key: `${current_date}/image_${leftPad(intervalsSinceMidnight(), 3, 0)}.png`,
-              ACL: 'public-read',
-              ContentType: 'image/gif',
-              Body: data
-            }, function(err, data) {
-              if (err) {
-                rollbar.log(err)
-              } else {
-                winston.log('info', `Successfully uploaded to bucket nytimes.lapse`);
-                return true;
-              }
-            });
+              ACL: 'public-read'
+            }
+          });
 
+          uploader.on('error', function(err) {
+            rollbar.log(err)
+          });
+
+          uploader.on('end', function() {
+            console.log("done uploading");
+            winston.log('info', `Successfully uploaded to bucket ${bucket}`);
+
+            return true;
           });
         }
       });

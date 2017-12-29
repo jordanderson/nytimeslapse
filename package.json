@@ -16,9 +16,9 @@
     "winston-loggly-bulk": "^2.0.1",
     "twitter": "^1.7.1",
     "phantomjs-prebuilt": "^2.1.16",
-    "aws-sdk": "^2.175.0",
     "left-pad": "^1.2.0",
-    "luxon": "^0.2.9"
+    "luxon": "^0.2.9",
+    "s3": "^4.4.0"
   },
   "engines": {
     "node": "8.x"
