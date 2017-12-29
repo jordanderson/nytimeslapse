@@ -1,0 +1,36 @@
+/* styles */
+/* called by your view template */
+
+/* You might want to try something fancier: */
+/* less: http://lesscss.org/ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: helvetica, arial, sans-serif;
+  margin: 25px;
+  background-size: 752px 275px;
+  overflow: scroll;
+  background-repeat: no-repeat;
+}
+
+.column {
+  position: absolute;
+  left: 120px;
+  top: 85px;
+  width: 520px;
+}
+
+.bold {
+  font-weight: bold;
+}
+
+p {
+  color: #000;
+  font-size: 11pt;
+  display: block;
+  font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+
